@@ -10,6 +10,9 @@ import taichi as ti
 import time
 import utils
 from sf_scene import Scene
+import os
+import numpy as np
+
 
 
 
@@ -200,31 +203,65 @@ class MyMainWindow(QMainWindow,Ui_MainWindow):
             gui = ti.ui.Window(scene_name, res = (self.config.WINDOW_WIDTH, self.config.WINDOW_HEIGHT), pos = (150, 150),vsync=False) # Unlimited frame rate
             #gui.fps_limit = 144
             canvas = gui.get_canvas()
+        ###ggui disabled 
+        if self.ggui == -1:
+            gui = None
+            canvas = None
+    
         
         start = time.time()
-        
         scene = Scene(self.config) #change 
-
         people = None
         if self.simu_method == 0:
             people = ORCA_People(self.config)
         elif self.simu_method == 1:
             people = SF_People(self.config, scene) #change
         elif self.simu_method == 2:
-            people = Steer_People(self.config)
-            
+            people = Steer_People(self.config)    
         #changessss
         frame_count = 0
         force_update_interval = 2   
         ### 
-
         end = time.time()
         initialize_time = end - start
+        print(f"[Init] Scene + People setup took {initialize_time:.3f}s")###TIME TAKEN TO INITIALIZE
 
         # for test
         # utils.export_pos0(self.config.N,self.config.pos_0,people.belong_batch,self.out_path[:-6]+'data/'+scene_name+'_pos0.csv')
 
-        if self.frame == -1:
+        if self.frame == -1: 
+    # ✅ HEADLESS MODE (ggui = -1)
+            if gui is None:
+                while True:
+            # Compute forces
+                    if frame_count % force_update_interval == 0:
+                        people.compute()
+                    people.update()
+
+            # Save positions every 50 frames
+                    if frame_count % 50 == 0:
+                        positions = people.pos.to_numpy()
+                        save_path = r"C:\Users\ayugu\Desktop\positions.tsv"
+                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+                        if frame_count == 0:
+                            print(f"[INFO] Saving agent positions to: {save_path}")
+                            with open(save_path, "w") as f:
+                                f.write("frame\tagent_id\tx\ty\n")
+
+                        with open(save_path, "a") as f:
+                            for i, pos in enumerate(positions):
+                                f.write(f"{frame_count}\t{i}\t{pos[0]:.4f}\t{pos[1]:.4f}\n")
+
+            # ✅ HEADLESS STOP CONDITION
+                    vel = people.vel.to_numpy()
+                    if np.linalg.norm(vel, axis=1).max() < 1e-4:
+                        print("[INFO] Agents stopped. Ending simulation.")
+                        break
+
+                    frame_count += 1
+        
+            
             if self.ggui == 0:
                 # run till exit manually, count the simulation frame
                 while gui.running:
@@ -234,12 +271,34 @@ class MyMainWindow(QMainWindow,Ui_MainWindow):
                             gui.running = False
                 ##changed##            
                     # people.compute()
+                    t_frame_start = time.time()
                     if frame_count%force_update_interval == 0:
                         people.compute()
-                    
+                    t_after_compute = time.time()
                     people.update()
-                    people.render(gui)
-                    gui.show()
+                    t_after_update = time.time()
+                    if frame_count % 50 == 0:  # record every 10 frames
+                        positions = people.pos.to_numpy()
+                        save_path = r"C:\Users\ayugu\Desktop\positions.tsv"
+                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+                        if frame_count == 0:
+                            print(f"[INFO] Saving agent positions to: {save_path}")
+                            with open(save_path, "w") as f:
+                                f.write("frame\tagent_id\tx\ty\n")
+
+                        with open(save_path, "a") as f:
+                            for i, pos in enumerate(positions):
+                                f.write(f"{frame_count}\t{i}\t{pos[0]:.4f}\t{pos[1]:.4f}\n")
+                    
+                    if gui is not None:
+                        people.render(gui)        # or people.ggui(canvas)
+                        gui.show()
+                    t_frame_end = time.time()
+                    
+                    # print(f"Frame {frame_count}: compute={t_after_compute - t_frame_start:.4f}s | "
+                    #         f"update={t_after_update - t_after_compute:.4f}s | "
+                    #         f"render={t_frame_end - t_after_update:.4f}s")
                     frame_count+=1###
             else:
                 while gui.running:
@@ -247,12 +306,33 @@ class MyMainWindow(QMainWindow,Ui_MainWindow):
                     if gui.is_pressed(ti.ui.SPACE):
                         gui.running = False
                     # people.compute()
+                    t_frame_start = time.time()
                     if frame_count%force_update_interval==0:
                         people.compute()
-                        
+                    t_after_compute = time.time()    
                     people.update()
-                    people.ggui(canvas)
-                    gui.show()
+                    t_after_update = time.time()
+                    if frame_count % 50 == 0:  # record every 10 frames
+                        positions = people.pos.to_numpy()
+                        save_path = r"C:\Users\ayugu\Desktop\positions.tsv"
+                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+                        if frame_count == 0:
+                            print(f"[INFO] Saving agent positions to: {save_path}")
+                            with open(save_path, "w") as f:
+                                f.write("frame\tagent_id\tx\ty\n")
+
+                        with open(save_path, "a") as f:
+                            for i, pos in enumerate(positions):
+                                f.write(f"{frame_count}\t{i}\t{pos[0]:.4f}\t{pos[1]:.4f}\n")
+                    if canvas is not None:
+                        people.ggui(canvas)
+                        gui.show() 
+                    t_frame_end = time.time()
+                    
+                    # print(f"Frame {frame_count}: compute={t_after_compute - t_frame_start:.4f}s | "
+                    #         f"update={t_after_update - t_after_compute:.4f}s | "
+                    #         f"render={t_frame_end - t_after_update:.4f}s")
                     frame_count+=1####
         else:
             # run for frame times, allow to exit by space key
@@ -267,8 +347,10 @@ class MyMainWindow(QMainWindow,Ui_MainWindow):
                     if i%force_update_interval==0:
                         people.compute()
                     people.update()
-                    people.render(gui)
-                    gui.show()
+                    if gui is not None:
+                        people.render(gui)
+                        gui.show()
+
                 else:
                     if gui.is_pressed(ti.ui.SPACE):
                         self.frame = i
@@ -277,11 +359,18 @@ class MyMainWindow(QMainWindow,Ui_MainWindow):
                     if i%force_update_interval==0:
                         people.compute()
                     people.update()
-                    people.ggui(canvas)  #NEW LINE UNCOMMENTED
-                    gui.show()
+                    if canvas is not None:
+                        people.ggui(canvas)
+                        gui.show()
+
 
         end_run = time.time()
         simulation_time = end_run - end
+        
+        print(f"[Summary] Initialization time: {initialize_time:.3f}s")
+        print(f"[Summary] Simulation time: {simulation_time:.3f}s")
+        print(f"[Summary] Total: {initialize_time + simulation_time:.3f}s")
+
         
         # output the simulation result to file, add the result to the end of the file
         with open(self.out_path+'/outfile.txt', 'a') as f:
